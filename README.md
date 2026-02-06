@@ -15,6 +15,8 @@ go install github.com/maelvls/glab-cloneall@latest
 
 ## Usage
 
+[demo.webm](https://github.com/user-attachments/assets/2a55508a-fda2-4d33-84f2-62a266d932cc)
+
 For example, the command:
 
 ```bash
