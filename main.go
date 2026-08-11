@@ -110,7 +110,7 @@ func main() {
 			s.Stop()
 			discovery = newBar(p.TotalPages, "Discovering")
 		}
-		discovery.Describe(fmt.Sprintf("Discovering %d/%d projects", p.Found, p.Total))
+		discovery.Describe(fitWidth(fmt.Sprintf("Discovering %d/%d projects", p.Found, p.Total), descWidth))
 		_ = discovery.Set(p.Page)
 	})
 	if discovery != nil {
@@ -322,9 +322,12 @@ func runJob(job Job, bar *progressbar.ProgressBar, res *results, mu *sync.Mutex)
 		printAboveBar(bar, fmt.Sprintf("❌ %s (%v)", job.RelDir, err))
 	}
 
-	bar.Describe(truncate(job.RelDir, 40))
+	bar.Describe(fitWidth(job.RelDir, descWidth))
 	_ = bar.Add(1)
 }
+
+// descWidth is the fixed number of cells reserved for a bar's description.
+const descWidth = 40
 
 // newBar builds a progress bar on stderr. A max of 0 or less means the total
 // is unknown, in which case the bar renders as a spinner.
@@ -334,7 +337,7 @@ func newBar(max int, description string) *progressbar.ProgressBar {
 	}
 	return progressbar.NewOptions(max,
 		progressbar.OptionSetWriter(os.Stderr),
-		progressbar.OptionSetDescription(description),
+		progressbar.OptionSetDescription(fitWidth(description, descWidth)),
 		progressbar.OptionSetPredictTime(true),
 		progressbar.OptionShowCount(),
 		progressbar.OptionSetRenderBlankState(true),
@@ -354,12 +357,16 @@ func printAboveBar(bar *progressbar.ProgressBar, msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 }
 
-func truncate(s string, n int) string {
+// fitWidth makes s exactly n cells wide: long values keep their tail (the
+// project name matters more than the group prefix), short ones are padded.
+// The bar is laid out around the description, so a description of varying
+// length makes the bar itself jump left and right on every update.
+func fitWidth(s string, n int) string {
 	r := []rune(s)
-	if len(r) <= n {
-		return s
+	if len(r) > n {
+		return "…" + string(r[len(r)-n+1:])
 	}
-	return "…" + string(r[len(r)-n+1:])
+	return s + strings.Repeat(" ", n-len(r))
 }
 
 // syncProjectJob clones or updates one project.
