@@ -50,11 +50,13 @@ glab-cloneall https://gitlab.com/gitlab-org/go /tmp/go
 | `-j`         | `min(NCPU, 8)`   | Number of concurrent `git clone`/`git pull` operations.  |
 
 Progress is shown as a progress bar. Projects whose repository you are not
-allowed to download are counted as "skipped (no access)" rather than printed
-one by one; only real failures are printed. The summary looks like:
+allowed to download are counted as "skipped (no access)", and projects that
+exist but have never been pushed to are counted as "skipped (empty)", rather
+than printed one by one; only real failures are printed. The summary looks
+like:
 
 ```text
-Done: 412 synced, 48 skipped (no access), 1 failed.
+Done: 412 synced, 48 skipped (no access), 5 skipped (empty), 1 failed.
 ```
 
 ## Rate limiting

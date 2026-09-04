@@ -134,6 +134,9 @@ func main() {
 	if res.noAccess > 0 {
 		parts = append(parts, fmt.Sprintf("%d skipped (no access)", res.noAccess))
 	}
+	if res.empty > 0 {
+		parts = append(parts, fmt.Sprintf("%d skipped (empty)", res.empty))
+	}
 	if res.failed > 0 {
 		parts = append(parts, fmt.Sprintf("%d failed", res.failed))
 	}
@@ -265,6 +268,7 @@ func defaultCloneConcurrency() int {
 type results struct {
 	ok       int
 	noAccess int
+	empty    int
 	failed   int
 }
 
@@ -317,6 +321,10 @@ func runJob(job Job, bar *progressbar.ProgressBar, res *results, mu *sync.Mutex)
 		// A group can contain projects whose repository we are not allowed to
 		// read. That is expected, not a failure: counted, not printed.
 		res.noAccess++
+	case errors.Is(err, errEmptyRepo):
+		// Same for projects created but never pushed to: there is nothing to
+		// sync, and that is not something the user can act on.
+		res.empty++
 	default:
 		res.failed++
 		printAboveBar(bar, fmt.Sprintf("❌ %s (%v)", job.RelDir, err))
@@ -379,15 +387,40 @@ func syncProjectJob(job Job) error {
 	}
 
 	if isGitRepo(job.RelDir) {
-		return runGit("git", "-C", job.RelDir, "pull", "--rebase", "--quiet")
+		err := runGit("git", "-C", job.RelDir, "pull", "--rebase", "--quiet")
+		// A pull against a project that was emptied (or never pushed to) fails
+		// with "no such ref was fetched", which reads like a local problem but
+		// is not one. The remote itself has the answer.
+		if err != nil && !errors.Is(err, errNoAccess) && remoteHasNoRefs(job.RelDir) {
+			return errEmptyRepo
+		}
+		return err
 	}
 
 	return runGit("git", "clone", "--quiet", job.URL, job.RelDir)
 }
 
+// remoteHasNoRefs reports whether origin advertises no refs at all, i.e. the
+// project exists but has never been pushed to.
+func remoteHasNoRefs(dir string) bool {
+	out, err := exec.Command("git", "-C", dir, "ls-remote", "--quiet", "origin").Output()
+	return err == nil && len(bytes.TrimSpace(out)) == 0
+}
+
 // errNoAccess marks a repository we are allowed to see in the group listing
 // but not allowed to clone (typically Guest access on a private project).
 var errNoAccess = errors.New("no access to repository")
+
+// errEmptyRepo marks a project that exists in the group listing but whose
+// repository has no commits yet, so there is nothing to clone or pull.
+var errEmptyRepo = errors.New("repository is empty")
+
+// emptyRepoPatterns are the ways git and GitLab phrase "this project has no
+// commits yet" when cloning.
+var emptyRepoPatterns = []string{
+	"a repository for this project does not exist yet",
+	"you appear to have cloned an empty repository",
+}
 
 // noAccessPatterns are the ways GitLab and git phrase "you may see this
 // project, but you may not read its repository".
@@ -409,6 +442,11 @@ func runGit(name string, args ...string) error {
 	if err := cmd.Run(); err != nil {
 		msg := stderr.String()
 		low := strings.ToLower(msg)
+		for _, p := range emptyRepoPatterns {
+			if strings.Contains(low, p) {
+				return errEmptyRepo
+			}
+		}
 		for _, p := range noAccessPatterns {
 			if strings.Contains(low, p) {
 				return errNoAccess
